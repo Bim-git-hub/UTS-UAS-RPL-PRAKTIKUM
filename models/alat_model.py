@@ -77,8 +77,14 @@ class AlatModel:
                     "UPDATE alat SET nama_alat=%s, harga_per_hari=%s, stok=%s, deskripsi=%s WHERE id_alat=%s",
                     (nama_alat, tarif_sewa, stok, kategori or None, id_alat)
                 )
+                if cursor.rowcount == 0:
+                    conn.commit()
+                    return False
             elif action == 'hapus':
                 cursor.execute("DELETE FROM alat WHERE id_alat=%s", (id_alat,))
+                if cursor.rowcount == 0:
+                    conn.commit()
+                    return False
             conn.commit()
             return True
         except Exception as e:

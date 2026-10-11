@@ -109,8 +109,8 @@ class InventarisController:
         """Mengubah status ketersediaan studio.
 
         Tersedia = buka (jadwal per-jam tetap dicek).
-        Dibooking = tutup manual / full hari ini oleh operator (blokir semua tanggal
-            sampai dibuka lagi ke Tersedia).
+        Dibooking = tutup sementara oleh operator (blokir SEMUA tanggal ke depan,
+            bukan cuma hari ini — sampai dibuka lagi ke Tersedia).
         Maintenance = tutup perawatan (blokir total).
         """
         try:
@@ -130,7 +130,7 @@ class InventarisController:
         if StudioModel.ubahStatus(id_studio, status_baru):
             tambahan = "."
             if status_baru == 'Dibooking':
-                tambahan = " (tutup full sementara — ingat kembalikan ke Tersedia besok!)."
+                tambahan = " (TUTUP SEMENTARA: semua tanggal diblokir — segera kembalikan ke Tersedia bila sudah buka!)."
             elif status_baru == 'Tersedia' and studio['status_ketersediaan'] == 'Dibooking':
                 tambahan = " (sudah dibuka lagi, penyewa bisa booking per jam)."
             elif status_baru == 'Tersedia':

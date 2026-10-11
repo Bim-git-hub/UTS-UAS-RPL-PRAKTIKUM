@@ -67,6 +67,8 @@ class PengembalianModel:
 
         (Tidak ada tabel `pengembalian` di DB — skema asli memakai
         kolom tgl_kembali_aktual + denda + status_transaksi='Selesai'.)
+        Kondisional WHERE status='Lunas': bila sudah diproses operator lain,
+        rowcount 0 -> dianggap gagal agar stok tidak dikembalikan 2x.
         """
         conn = get_connection()
         if not conn:
@@ -76,7 +78,7 @@ class PengembalianModel:
             cursor.execute(
                 """UPDATE transaksi
                    SET tgl_kembali_aktual = %s, denda = %s, status_transaksi = 'Selesai'
-                   WHERE id_transaksi = %s""",
+                   WHERE id_transaksi = %s AND status_transaksi = 'Lunas'""",
                 (tanggal_kembali_aktual, denda, id_transaksi)
             )
             conn.commit()

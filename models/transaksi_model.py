@@ -149,9 +149,33 @@ class TransaksiModel:
                 (status_baru, id_transaksi)
             )
             conn.commit()
-            return True
+            return cursor.rowcount > 0
         except Exception as e:
             print(f"[ERROR] Ubah Status Transaksi: {e}")
+            return False
+        finally:
+            conn.close()
+
+    @staticmethod
+    def ubahStatusKondisional(id_transaksi, status_baru, status_diharapkan):
+        """Ubah status hanya bila status saat ini masih seperti diharapkan.
+
+        Mencegah race: dua operator verifikasi/proses bareng, yang kedua gagal
+        (rowcount 0) sehingga tidak terjadi dobel proses.
+        """
+        conn = get_connection()
+        if not conn: return False
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """UPDATE transaksi SET status_transaksi = %s
+                   WHERE id_transaksi = %s AND status_transaksi = %s""",
+                (status_baru, id_transaksi, status_diharapkan)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            print(f"[ERROR] Ubah Status Kondisional: {e}")
             return False
         finally:
             conn.close()
@@ -216,16 +240,35 @@ class TransaksiModel:
 
     @staticmethod
     def lihatPending():
-        """Pesanan yang butuh tindakan operator: status Pending / pembayaran Menunggu."""
+        """Pesanan Pending (menunggu dibayar/diverifikasi sewa). Tak campur denda."""
         return TransaksiModel._fetch_list(
-            "WHERE t.status_transaksi = 'Pending' OR p.status_konfirmasi = 'Menunggu'"
+            "WHERE t.status_transaksi = 'Pending'"
+        )
+
+    @staticmethod
+    def lihatAntreanVerifikasi():
+        """Antrean verifikasi: hanya yang ada pembayaran Menunggu (sewa maupun denda)."""
+        return TransaksiModel._fetch_list(
+            "WHERE p.status_konfirmasi = 'Menunggu'"
+        )
+
+    @staticmethod
+    def lihatDendaBelumLunas():
+        """Selesai berdenda yang belum lunas: belum bayar / Ditolak (bukan Menunggu).
+
+        Menunggu sudah tampil di antrean verifikasi, jadi dikecualikan di sini
+        agar tidak dobel dan agar denda Ditolak tetap terpantau.
+        """
+        return TransaksiModel._fetch_list(
+            """WHERE t.status_transaksi = 'Selesai' AND t.denda > 0
+               AND (p.status_konfirmasi IS NULL OR p.status_konfirmasi != 'Menunggu')"""
         )
 
     @staticmethod
     def lihatRiwayat():
-        """Riwayat: transaksi yang sudah selesai / lunas / tuntas / batal."""
+        """Riwayat final: Selesai / Batal / Tuntas. Lunas (sewa aktif) bukan riwayat."""
         return TransaksiModel._fetch_list(
-            "WHERE t.status_transaksi IN ('Selesai', 'Lunas', 'Batal', 'Tuntas')"
+            "WHERE t.status_transaksi IN ('Selesai', 'Batal', 'Tuntas')"
         )
 
     @staticmethod

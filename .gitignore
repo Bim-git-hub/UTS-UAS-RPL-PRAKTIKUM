@@ -7,3 +7,4 @@ env/
 laporan_owner_*.txt
 *.sql
 error.log
+plan.md/

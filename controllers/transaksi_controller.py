@@ -251,6 +251,13 @@ class TransaksiController:
         for d in TransaksiModel.lihatDetail(id_transaksi):
             if not d.get('id_studio'):
                 continue
+            studio = StudioModel.getById(d['id_studio'])
+            if studio and studio.get('status_ketersediaan') in ('Maintenance', 'Dibooking'):
+                return False, (
+                    f"Studio '{d.get('nama_studio')}' sedang {studio['status_ketersediaan']} "
+                    "(tutup operator). Pembayaran tetap Menunggu — Tolak agar transaksi Batal "
+                    "atau buka dulu di menu 7."
+                )
             mulai = TransaksiController._jam_db_ke_str(d.get('jam_mulai'))
             selesai = TransaksiController._jam_db_ke_str(d.get('jam_selesai'))
             if mulai and selesai:
@@ -373,24 +380,30 @@ class TransaksiController:
             if not bebas:
                 return False, pesan_slot
 
-        verif_ok = PembayaranModel.verifikasi(id_pembayaran, status_pembayaran)
-        if verif_ok:
-            if bayar_denda:
-                status_baru = 'Tuntas' if status_pembayaran == 'Diterima' else 'Selesai'
-            else:
-                # Sesuai ENUM transaksi: Pending, Lunas, Selesai, Batal, Tuntas
-                status_baru = 'Lunas' if status_pembayaran == 'Diterima' else 'Batal'
-            if TransaksiModel.ubahStatus(id_transaksi, status_baru):
-                akhir = f" Status transaksi {id_transaksi} menjadi {status_baru}."
-                if not bayar_denda and status_pembayaran == 'Ditolak':
-                    akhir += " Silakan buat pesanan baru di menu Sewa."
-                if bayar_denda and status_pembayaran == 'Ditolak':
-                    akhir += " Denda belum lunas, silakan bayar ulang."
-                return True, f"Pembayaran ID {id_pembayaran} {status_pembayaran}.{akhir}"
-            # Transaksi gagal diubah: kembalikan pembayaran ke Menunggu agar konsisten
-            PembayaranModel.verifikasi(id_pembayaran, 'Menunggu')
-            return False, "Gagal memperbarui status transaksi. Verifikasi dibatalkan."
-        return False, "Gagal memverifikasi pembayaran. Cek ID Pembayaran."
+        verif_ok = PembayaranModel.verifikasiKondisional(id_pembayaran, status_pembayaran, 'Menunggu')
+        if not verif_ok:
+            return False, (
+                f"Gagal memverifikasi: pembayaran ID {id_pembayaran} sudah diproses operator lain "
+                "atau tidak lagi Menunggu. Muat ulang antrean."
+            )
+        if bayar_denda:
+            status_baru = 'Tuntas' if status_pembayaran == 'Diterima' else 'Selesai'
+        else:
+            # Sesuai ENUM transaksi: Pending, Lunas, Selesai, Batal, Tuntas
+            status_baru = 'Lunas' if status_pembayaran == 'Diterima' else 'Batal'
+        if TransaksiModel.ubahStatusKondisional(id_transaksi, status_baru, status_trx):
+            akhir = f" Status transaksi {id_transaksi} menjadi {status_baru}."
+            if not bayar_denda and status_pembayaran == 'Ditolak':
+                akhir += " Silakan buat pesanan baru di menu Sewa."
+            if bayar_denda and status_pembayaran == 'Ditolak':
+                akhir += " Denda belum lunas, pantau di menu 5 (Denda Belum Lunas)."
+            return True, f"Pembayaran ID {id_pembayaran} {status_pembayaran}.{akhir}"
+        # Transaksi gagal diubah (direbut operator lain): kembalikan pembayaran ke Menunggu
+        PembayaranModel.verifikasi(id_pembayaran, 'Menunggu')
+        return False, (
+            f"Gagal memperbarui status transaksi {id_transaksi} "
+            f"(status sudah berubah dari '{status_trx}'). Verifikasi dibatalkan."
+        )
 
     @staticmethod
     def lihat_rincian(id_transaksi):
@@ -402,10 +415,20 @@ class TransaksiController:
 
     @staticmethod
     def lihat_pending():
-        """Untuk menu operator: pesanan Pending / menunggu verifikasi."""
+        """Untuk menu operator: pesanan Pending (belum bayar / menunggu verifikasi sewa)."""
         return TransaksiModel.lihatPending()
 
     @staticmethod
+    def lihat_antrean_verifikasi():
+        """Untuk menu operator: hanya yang ada pembayaran Menunggu (sewa/denda)."""
+        return TransaksiModel.lihatAntreanVerifikasi()
+
+    @staticmethod
+    def lihat_denda_belum_lunas():
+        """Untuk menu operator: Selesai berdenda yang belum bayar / Ditolak."""
+        return TransaksiModel.lihatDendaBelumLunas()
+
+    @staticmethod
     def lihat_riwayat():
-        """Untuk menu operator: riwayat Selesai / Lunas / Batal / Tuntas."""
+        """Untuk menu operator: riwayat final Selesai / Batal / Tuntas."""
         return TransaksiModel.lihatRiwayat()
