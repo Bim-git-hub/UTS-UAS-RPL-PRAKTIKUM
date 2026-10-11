@@ -6,6 +6,20 @@ from models.pembayaran_model import PembayaranModel
 
 class TransaksiController:
     METODE_BAYAR_VALID = ('Tunai', 'Transfer')
+    # SIMULASI: daftar rekening tujuan transfer (bukan data asli).
+    TUJUAN_TRANSFER = (
+        "BCA 1234567890 a.n. ArtStudio Rent",
+        "BRI 1122334455 a.n. ArtStudio Rent",
+        "Mandiri 5566778899 a.n. ArtStudio Rent",
+    )
+
+    @staticmethod
+    def teks_tujuan_transfer():
+        """Satu blok teks tujuan transfer untuk ditampilkan ke penyewa."""
+        baris = ["Transfer ke salah satu rekening (SIMULASI):"]
+        for rek in TransaksiController.TUJUAN_TRANSFER:
+            baris.append(f"  - {rek}")
+        return "\n".join(baris)
 
     @staticmethod
     def _tanggal(tgl_sewa, tgl_kembali_rencana):

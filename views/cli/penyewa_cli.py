@@ -228,6 +228,10 @@ def menu_penyewa(user):
                     user['id_user'], id_tx, 'Tunai', None
                 )
             else:
+                nominal_tf = float(t_terpilih.get('denda') or 0) if is_denda else float(t_terpilih['total_biaya'])
+                print(f"Silakan transfer PAS Rp{nominal_tf:,.0f} ke salah satu (SIMULASI):")
+                for rek in TransaksiController.TUJUAN_TRANSFER:
+                    print(f"  - {rek}")
                 bukti = input("Nama file foto bukti bayar (contoh: bayar.jpg, Enter=batal): ").strip()
                 if not bukti:
                     continue
