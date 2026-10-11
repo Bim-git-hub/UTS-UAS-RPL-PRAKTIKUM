@@ -72,33 +72,19 @@ class PengembalianController:
         keterlambatan_hari = (tgl_aktual - rencana).days if rencana else 0
         denda = PengembalianModel.hitungDenda(keterlambatan_hari)
 
-        # 5. Simpan (UPDATE kondisional WHERE Lunas)
+        # 5. Simpan (UPDATE transaksi)
         success = PengembalianModel.prosesPengembalian(
             id_transaksi, tgl_aktual.strftime("%Y-%m-%d"), denda
         )
         if not success:
-            return False, (
-                f"Gagal memproses pengembalian ID {id_transaksi}: "
-                "sudah diproses operator lain (tidak lagi Lunas) atau database error. "
-                "Muat ulang daftar sewa aktif."
-            )
+            return False, "Gagal memproses pengembalian (database)."
 
-        # 6. Kembalikan stok alat yang disewa (semua item alat, tanpa filter subtotal
-        #    agar promo/gratis subtotal 0 pun stoknya tetap kembali).
+        # 6. Kembalikan stok alat yang disewa
         dipulihkan = []
-        gagal_stok = []
         for d in TransaksiModel.lihatDetail(id_transaksi):
-            if d.get('id_alat'):
-                try:
-                    qty = int(d.get('jumlah') or 0)
-                except (ValueError, TypeError):
-                    qty = 0
-                if qty <= 0:
-                    continue
-                if AlatModel.ubahStok(d['id_alat'], qty):
-                    dipulihkan.append(f"{d['nama_alat']} x{qty}")
-                else:
-                    gagal_stok.append(f"{d.get('nama_alat') or d['id_alat']} x{qty}")
+            if d.get('id_alat') and float(d.get('subtotal') or 0) > 0:
+                if AlatModel.ubahStok(d['id_alat'], d['jumlah']):
+                    dipulihkan.append(f"{d['nama_alat']} x{d['jumlah']}")
 
         if denda > 0:
             pesan = (
@@ -113,6 +99,4 @@ class PengembalianController:
             )
         if dipulihkan:
             pesan += f" Stok kembali: {', '.join(dipulihkan)}."
-        if gagal_stok:
-            pesan += f" [PERHATIAN] Stok gagal kembali: {', '.join(gagal_stok)} — cek manual di DB."
         return True, pesan

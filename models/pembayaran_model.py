@@ -22,26 +22,6 @@ class PembayaranModel:
             conn.close()
 
     @staticmethod
-    def verifikasiKondisional(id_pembayaran, status_baru, status_diharapkan='Menunggu'):
-        """Verifikasi hanya bila status saat ini masih seperti diharapkan (anti-dobel)."""
-        conn = get_connection()
-        if not conn: return False
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                """UPDATE pembayaran SET status_konfirmasi = %s
-                   WHERE id_pembayaran = %s AND status_konfirmasi = %s""",
-                (status_baru, id_pembayaran, status_diharapkan)
-            )
-            conn.commit()
-            return cursor.rowcount > 0
-        except Exception as e:
-            print(f"[ERROR] Verifikasi Kondisional Gagal: {e}")
-            return False
-        finally:
-            conn.close()
-
-    @staticmethod
     def getById(id_pembayaran):
         """Ambil satu pembayaran berdasarkan ID."""
         conn = get_connection()

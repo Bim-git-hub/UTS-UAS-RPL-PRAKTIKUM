@@ -37,9 +37,8 @@ class StudioModel:
     def cekJadwal(id_studio, tgl_mulai, tgl_selesai, jam_mulai=None, jam_selesai=None):
         """Metode cekJadwal(): True jika studio bisa dipesan pada tanggal + jam.
 
-        Menolak studio Maintenance (perawatan) dan Dibooking (tutup sementara
-        oleh operator — blokir semua tanggal sampai dibuka lagi), dan menolak
-        bila ada transaksi Lunas
+        Menolak studio Maintenance (perawatan) dan Dibooking (tutup manual /
+        full hari ini oleh operator), dan menolak bila ada transaksi Lunas
         yang tanggalnya bersinggungan DAN jamnya bersinggungan.
         Hanya Lunas yang mengunci slot (Pending tak-bayar tidak menahan).
         Beda jam di tanggal sama = boleh. Baris lama tanpa jam (NULL)
@@ -144,16 +143,14 @@ class StudioModel:
 
     @staticmethod
     def hitungPemakaian(id_studio):
-        """Hitung pemakaian nyata studio ini (abaikan transaksi Batal yang tak pernah dipakai)."""
+        """Hitung berapa baris detail_transaksi yang memakai studio ini (riwayat)."""
         conn = get_connection()
         if not conn:
             return -1
         cursor = conn.cursor()
         try:
             cursor.execute(
-                """SELECT COUNT(*) FROM detail_transaksi d
-                   JOIN transaksi t ON t.id_transaksi = d.id_transaksi
-                   WHERE d.id_studio = %s AND t.status_transaksi != 'Batal'""",
+                "SELECT COUNT(*) FROM detail_transaksi WHERE id_studio = %s",
                 (id_studio,)
             )
             row = cursor.fetchone()
@@ -166,11 +163,7 @@ class StudioModel:
 
     @staticmethod
     def adaBookingAktif(id_studio):
-        """True bila studio masih dipakai transaksi aktif (Pending/Lunas saja).
-
-        Selesai (kembali) dan Tuntas (denda lunas) adalah final, bukan aktif.
-        Batal juga bukan aktif.
-        """
+        """True bila studio masih dipakai transaksi aktif (selain Batal/Selesai)."""
         conn = get_connection()
         if not conn:
             return True  # anggap ada demi keamanan (tolak hapus bila DB mati)
@@ -180,7 +173,7 @@ class StudioModel:
                 """SELECT COUNT(*) FROM transaksi t
                    JOIN detail_transaksi d ON d.id_transaksi = t.id_transaksi
                    WHERE d.id_studio = %s
-                     AND t.status_transaksi IN ('Pending', 'Lunas')""",
+                     AND t.status_transaksi NOT IN ('Batal', 'Selesai')""",
                 (id_studio,)
             )
             row = cursor.fetchone()

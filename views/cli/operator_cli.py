@@ -2,12 +2,6 @@ from controllers.inventaris_controller import InventarisController
 from controllers.transaksi_controller import TransaksiController
 from controllers.pengembalian_controller import PengembalianController
 
-def _rupiah(nilai):
-    try:
-        return f"Rp{float(nilai or 0):,.0f}"
-    except (ValueError, TypeError):
-        return "Rp-"
-
 def _tampil_daftar(transaksis, judul):
     print(f"\n--- {judul} ---")
     if not transaksis:
@@ -21,7 +15,7 @@ def _tampil_daftar(transaksis, judul):
         print(
             f"ID-Trx:{t['id_transaksi']} | ID-Bayar:{id_bayar} | Penyewa:{t['username']} ({t['nama_lengkap']}) | "
             f"Sewa:{t['tgl_sewa']} -> Rencana Kembali:{t['tgl_kembali_rencana']} | "
-            f"Total:{_rupiah(t.get('total_biaya'))} | Denda:{_rupiah(t.get('denda'))} | "
+            f"Total:Rp{t['total_biaya']:,.0f} | Denda:Rp{(t['denda'] or 0):,.0f} | "
             f"Status:{t['status_transaksi']} | {metode}{bukti_txt} | Bayar:{t.get('status_pembayaran') or '-'}"
         )
 
@@ -51,14 +45,8 @@ def _pilih_nomor(jumlah, teks="Pilih"):
     return int(pilih)
 
 def _input_angka(label, tipe):
-    """Baca angka bulat dari user. Kembalikan nilai / None bila bukan angka.
-
-    Tidak lagi menghapus titik/koma diam-diam (dulu '1.5' jadi 15).
-    """
-    teks = input(label).strip().replace(' ', '')
-    if tipe is int and not teks.lstrip('-').isdigit():
-        print(f"[!] {label.strip(' :')} harus angka bulat.")
-        return None
+    """Baca angka dari user. Kembalikan nilai / None bila bukan angka."""
+    teks = input(label).strip().replace('.', '').replace(',', '')
     try:
         return tipe(teks)
     except ValueError:
@@ -98,8 +86,8 @@ def menu_operator(user):
         print("2. Tambah Data Studio")
         print("3. Verifikasi Pembayaran Transaksi")
         print("4. Proses Pengembalian & Denda")
-        print("5. Lihat Pending & Denda Belum Lunas")
-        print("6. Lihat Riwayat Transaksi (Selesai/Batal/Tuntas)")
+        print("5. Lihat Daftar Pesanan Pending")
+        print("6. Lihat Riwayat Transaksi (Selesai/Lunas/Batal/Tuntas)")
         print("7. Atur Status Ketersediaan Studio")
         print("8. Edit / Hapus Data Studio")
         print("0. Logout")
@@ -135,22 +123,15 @@ def menu_operator(user):
 
         elif pilihan == '3':
             print("\n--- VERIFIKASI PEMBAYARAN ---")
-            print("(Hanya yang ada pembayaran Menunggu — sewa Pending maupun denda Selesai.)")
-            antre = TransaksiController.lihat_antrean_verifikasi()
+            antre = TransaksiController.lihat_pending()
             if not antre:
                 print("Tidak ada antrean menunggu verifikasi.")
-                print("Pending yang belum bayar lihat di menu 5.")
                 continue
             print("Antrean:")
             for i, t in enumerate(antre, start=1):
                 metode = t.get('metode_bayar') or '-'
-                jenis = "DENDA" if t['status_transaksi'] == 'Selesai' else "SEWA"
-                try:
-                    nominal = float(t.get('jumlah_bayar') if t['status_transaksi'] == 'Selesai' else t.get('total_biaya') or 0)
-                except (ValueError, TypeError):
-                    nominal = 0
-                print(f"  {i}. [{jenis}] ID-Trx {t['id_transaksi']} | ID-Bayar {t.get('id_pembayaran') or '-'} | "
-                      f"{t['username']} ({t['nama_lengkap']}) | Rp{nominal:,.0f} | "
+                print(f"  {i}. ID-Trx {t['id_transaksi']} | ID-Bayar {t.get('id_pembayaran') or '-'} | "
+                      f"{t['username']} ({t['nama_lengkap']}) | Rp{t['total_biaya']:,.0f} | "
                       f"{metode} | Bayar: {t.get('status_pembayaran') or '-'}")
             nomor = _pilih_nomor(len(antre))
             if nomor is None:
@@ -159,7 +140,7 @@ def menu_operator(user):
             id_tx, id_bayar = pilih['id_transaksi'], pilih.get('id_pembayaran')
             _tampil_rincian(id_tx)
             if not id_bayar:
-                print("[INFO] Data rusak: pembayaran Menunggu tanpa ID. Muat ulang.")
+                print("[INFO] Transaksi ini belum ada pembayaran. Minta penyewa upload bukti dulu.")
                 continue
             metode = pilih.get('metode_bayar') or '-'
             bukti = pilih.get('bukti_bayar') or '-'
@@ -192,58 +173,26 @@ def menu_operator(user):
             nomor = _pilih_nomor(len(aktif))
             if nomor is None:
                 continue
-            dipilih = aktif[nomor - 1]
-            id_tx = dipilih['id_transaksi']
+            id_tx = aktif[nomor - 1]['id_transaksi']
             _tampil_rincian(id_tx)
-            tgl_aktual = input("Tanggal Aktual Kembali (YYYY-MM-DD, Enter=hari ini, ketik batal=batal): ").strip()
-            if tgl_aktual.lower() in ('batal', 'cancel', '0'):
-                print("[BATAL] Pengembalian dibatalkan.")
-                continue
-
-            # Pratinjau denda sebelum simpan (cegah typo tahun -> denda raksasa)
-            from datetime import date as _date, datetime as _dt
-            try:
-                if not tgl_aktual:
-                    _tgl = _date.today()
-                else:
-                    _tgl = _dt.strptime(tgl_aktual, "%Y-%m-%d").date()
-                _rencana = dipilih.get('tgl_kembali_rencana')
-                if hasattr(_rencana, 'date') and not isinstance(_rencana, _date):
-                    _rencana = _rencana.date()
-                if isinstance(_rencana, str):
-                    _rencana = _dt.strptime(str(_rencana)[:10], "%Y-%m-%d").date()
-                _telat = (_tgl - _rencana).days if _rencana else 0
-                _denda = _telat * 20000 if _telat and _telat > 0 else 0
-                if _denda > 0:
-                    print(f"[PRATINJAU] Terlambat {_telat} hari -> Denda Rp{_denda:,.0f}.")
-                else:
-                    print("[PRATINJAU] Tepat waktu -> tanpa denda.")
-                yakin = input("Simpan pengembalian? 1. Ya | Enter=batal: ").strip()
-                if yakin != '1':
-                    print("[BATAL] Pengembalian dibatalkan, tidak ada data diubah.")
-                    continue
-            except (ValueError, TypeError, AttributeError):
-                pass  # biarkan controller yang validasi format tanggal
+            tgl_aktual = input("Tanggal Aktual Kembali (YYYY-MM-DD, Enter=hari ini): ").strip()
 
             ok, msg = PengembalianController.proses_kembali(id_tx, tgl_aktual)
             print(f"\n[{'SUCCESS' if ok else 'ERROR'}] {msg}")
 
         elif pilihan == '5':
             data = TransaksiController.lihat_pending()
-            _tampil_daftar(data, "PESANAN PENDING (BELUM BAYAR / MENUNGGU VERIFIKASI SEWA)")
-            denda = TransaksiController.lihat_denda_belum_lunas()
-            _tampil_daftar(denda, "DENDA BELUM LUNAS (BELUM BAYAR / DITOLAK — TAGIH PENYEWA)")
+            _tampil_daftar(data, "PESANAN PENDING / MENUNGGU VERIFIKASI")
 
         elif pilihan == '6':
             data = TransaksiController.lihat_riwayat()
-            _tampil_daftar(data, "RIWAYAT TRANSAKSI (SELESAI/BATAL/TUNTAS)")
+            _tampil_daftar(data, "RIWAYAT TRANSAKSI")
 
         elif pilihan == '7':
             print("\n--- STATUS KETERSEDIAAN STUDIO ---")
             print("Tersedia = buka (booking per jam tetap dicek).")
-            print("Dibooking = TUTUP SEMENTARA oleh operator (blokir SEMUA tanggal,")
-            print("            bukan cuma hari ini — sampai dibuka lagi ke Tersedia).")
-            print("Maintenance = tutup perawatan (blokir total).")
+            print("Dibooking = TUTUP FULL sementara oleh operator (blokir semua tanggal).")
+            print("Maintenance = tutup perawatan.")
             studios = InventarisController.lihat_semua_studio()
             if not studios:
                 print("Belum ada data studio.")
@@ -264,7 +213,7 @@ def menu_operator(user):
             cur = studios[nomor - 1]
             id_studio = cur['id_studio']
             print(f"Dipilih: {cur['nama_studio']} (sekarang: {cur['status_ketersediaan']})")
-            print("Status baru: 1. Buka (Tersedia) | 2. Tutup Sementara (Dibooking, blokir semua tanggal) | 3. Maintenance")
+            print("Status baru: 1. Buka (Tersedia) | 2. Tandai Full Hari Ini (Dibooking) | 3. Maintenance")
             pilih_status = input("Pilih (1/2/3, Enter=batal): ").strip()
             if not pilih_status:
                 print("[BATAL] Kembali ke menu operator.")
@@ -274,8 +223,7 @@ def menu_operator(user):
                 print("[!] Pilihan tidak valid.")
                 continue
             if peta[pilih_status] == 'Dibooking':
-                print("[PERHATIAN] Ini menutup SEMUA tanggal ke depan, bukan cuma hari ini.")
-                yakin = input("Tutup sementara (blokir semua booking baru)? 1. Ya | Enter=batal: ").strip()
+                yakin = input("Tandai FULL (tutup semua booking baru)? 1. Ya | Enter=batal: ").strip()
                 if yakin != '1':
                     print("[BATAL] Tidak ada perubahan.")
                     continue
